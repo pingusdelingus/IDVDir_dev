@@ -1,4 +1,4 @@
-
+import {TerminalNode, ErrorNode,} from 'antlr4'
 import * as antlr4 from 'antlr4';
 window.antlr4 = antlr4;
 
@@ -9,6 +9,17 @@ import {default as Listener} from './TPTPListener';
 function stripParens(formula){
 	return formula.replace(/\s+/g,'').replace(/[()]/g, '');
 }
+// treewalk
+
+
+
+
+//treewalk
+
+
+
+
+
 
 function interpretationLabel(node){
     let s = node.formula.replace(/"/g, '\\"');
@@ -63,80 +74,73 @@ function scaleFromInterestingness(interestingness) {
 window.scaleFromInterestingness = scaleFromInterestingness;
 
 // helper function for extracting recursive parent information:
-function getParentsFromSource(source, node){
 
-	let dag = source.dag_source();
-	let sources = source.sources();
-	if (sources !== null){
-		for(let s of sources){
-			getParentsFromSource(s, node);
+function getParentsFromSource(source, node) {
+  console.log("new method")
+	let stack = [{ source, node }];
+
+	while (stack.length > 0) {
+		let { source, node } = stack.pop();
+
+		let dag = source.dag_source();
+		let sources = source.sources();
+
+		if (sources !== null) {
+			for (let s of sources) {
+				stack.push({ source: s, node });
+			}
+			continue;
+		} else if (dag === null) {
+			continue;
 		}
-	}
-	else if (dag === null){
-		return
-	}
 
-	if (dag.inference_record()) {
-		// console.log("got inference record");
-		let inference_record = dag.inference_record();
-		node.inference_record = inference_record.getText();
+		if (dag.inference_record()) {
+			let inference_record = dag.inference_record();
+			node.inference_record = inference_record.getText();
 
-		//@=========================================================================================
-		//~ ORIGINAL FROM JACK
-		// let parent_list = inference_record.parents().parent_list().parent_info();
+			let parent_list = [inference_record.parents().parent_list().parent_info()];
+			parent_list = parent_list.concat(
+				inference_record.parents().parent_list().comma_parent_info()
+					.map(comma_info => comma_info.parent_info())
+			);
 
-		//~ MODIFIED TO USE COMMA_PARENT_INFO
-		let parent_list = [inference_record.parents().parent_list().parent_info()];
-		window.parent_list = parent_list;
-		window.inference_record = inference_record;
+			for (let p of parent_list) {
+				let ps = p.source();
 
-		parent_list = parent_list.concat(
-			inference_record.parents().parent_list().comma_parent_info()
-				.map(comma_info => comma_info.parent_info())
-		);
-		//@=========================================================================================
-		
-		// console.log("parent_list", parent_list);
-		for (let i = 0; i < parent_list.length; i++) {
-			let p = parent_list[i];
-			let ps = p.source();
+				if (ps.dag_source()) {
+					if (ps.dag_source().name()) {
+						node.parents.push(ps.getText());
+					} else {
+						try {
+							let parents = ps.dag_source().inference_record().parents().parent_list().parent_info();
+							parents = [parents, ...ps.dag_source().inference_record().parents().parent_list()
+								.comma_parent_info().map(x => x.parent_info())];
+							let new_sources = parents.map(x => x.source());
 
-			if (ps.dag_source()){
-				if (ps.dag_source().name()){
-					node.parents.push(ps.getText());
-				}
-				else{
-					try{
-						let sources = [];
-						window.ps = ps;
-						let parents = ps.dag_source().inference_record().parents().parent_list().parent_info();
-						parents = [parents, ...ps.dag_source().inference_record().parents().parent_list().comma_parent_info().map(x => x.parent_info())];
-						sources = parents.map(x => x.source());
-						
-						for(let s of sources){
-							getParentsFromSource(s, node);
+							for (let s of new_sources) {
+								stack.push({ source: s, node });
+							}
+						} catch (e) {
+							console.log(`failed to parse dag source: ${ps.dag_source().getText()}`);
+							console.log(e);
 						}
-					}catch(e){
-						console.log(`failed to parse dag source: ${ps.dag_source().getText()}`);
-						console.log(e);
 					}
+				} else if (ps.sources()) {
+					let new_sources = ps.sources().source();
+					for (let s of new_sources) {
+						stack.push({ source: s, node });
+					}
+				} else {
+					console.log(`${node.name} has source ${source}`);
 				}
 			}
-			else if(ps.sources()){
-				let sources = ps.sources().source();
-				for(let s of sources){
-					getParentsFromSource(s, node);
-				}
-			}
-			else{
-				console.log(`${node.name} has source ${source}`);
-			}
+		} else if (dag.name()) {
+			node.parents.push(dag.name().getText());
 		}
-
-	} else if (dag.name()) {
-		node.parents.push(dag.name().getText());
 	}
 }
+
+
 
 window.getParentsFromSource = getParentsFromSource;
 
@@ -188,7 +192,7 @@ class Formatter extends Listener {
 	process(ctx, type) {
 		let role = ctx.formula_role().getText();
 		
-		if(!["conjecture", "negated_conjecture", "axiom", "plain"].includes(role)){
+		if(!["conjecture","type" ,"negated_conjecture", "axiom", "plain"].includes(role)){
 			console.log(`"${role}" role not shown for "${ctx.name().getText()}"`);
 			return;
 		}
@@ -391,12 +395,69 @@ let parseProof = function (proofText) {
 
 	let formatter = new Formatter();
 
+
+	//iterative implementation
+	function iterativeWalk(listener, root) {
+		console.log("inside of iterative walk")
+		const stack = [];
+		stack.push({ node: root, stage: "enter" });
+	
+		while (stack.length > 0) {
+			const { node, stage } = stack.pop();
+	
+	const isErrorNode = typeof node.isErrorNode === 'function' && node.isErrorNode();
+	
+			if (isErrorNode) {
+				if (stage === "enter" && listener.visitErrorNode) {
+					listener.visitErrorNode(node);
+				}
+				continue;
+			}
+	
+			if (node instanceof TerminalNode) {
+				if (stage === "enter" && listener.visitTerminal) {
+					listener.visitTerminal(node);
+				}
+				continue;
+			}
+	
+			if (stage === "exit") {
+				if (listener[`exit${node.constructor.name}`]) {
+					listener[`exit${node.constructor.name}`](node);
+				}
+				if (listener.exitEveryRule) {
+					listener.exitEveryRule(node);
+				}
+				continue;
+			}
+	
+			if (listener.enterEveryRule) {
+				listener.enterEveryRule(node);
+			}
+			if (listener[`enter${node.constructor.name}`]) {
+				listener[`enter${node.constructor.name}`](node);
+			}
+	
+			stack.push({ node, stage: "exit" });
+			for (let i = node.getChildCount() - 1; i >= 0; i--) {
+				stack.push({ node: node.getChild(i), stage: "enter" });
+			}
+		}
+	}
+
 	let tree;
 	console.log("Beginning parsing...");
+
 	while ((tree = parser.tptp_input())) {
 		if (tree.getText() == "<EOF>") break;
-		antlr4.default.tree.ParseTreeWalker.DEFAULT.walk(formatter, tree);
-	}
+		 antlr4.default.tree.ParseTreeWalker.DEFAULT.walk(formatter, tree);
+    //  ^ this is a recursive tree walk function that is slowing down performance on large proofs
+    
+    
+    iterativeWalk(formatter,tree);       
+
+
+	}// end of while
 	console.log("Finished parsing!")
 
 	let nm = formatter.node_map;
