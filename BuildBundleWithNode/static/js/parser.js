@@ -382,19 +382,19 @@ let proofToGV = function (nodes) {
 	return gvLines.join('\n');
 }
 
-async function asyncWalkTreeIteratively(listener, root, batchSize = 50) {
-  const TerminalNodeClass = (typeof TerminalNode !== "undefined" && TerminalNode) || null;
+async function asyncwalktreeiteratively(listener, root, batchsize = 50) {
+  const terminalnodeclass = (typeof terminalnode !== "undefined" && terminalnode) || null;
 
-  // stack frames include: { node, childIndex, visited }
-  // 'visited' indicates whether we've called enterRule on this node.
+  // stack frames include: { node, childindex, visited }
+  // 'visited' indicates whether we've called enterrule on this node.
   const stack = [];
-  stack.push({ node: root, childIndex: 0, visited: false });
-  let processedCount = 0;  
+  stack.push({ node: root, childindex: 0, visited: false });
+  let processedcount = 0;  
 
   while (stack.length > 0) {
-    if (processedCount >= batchSize) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-      processedCount = 0;
+    if (processedcount >= batchsize) {
+      await new promise(resolve => settimeout(resolve, 0));
+      processedcount = 0;
     }
 
     // peek at the top stack frame
@@ -403,160 +403,159 @@ async function asyncWalkTreeIteratively(listener, root, batchSize = 50) {
 
 
     // check for terminal node:
-    if (TerminalNodeClass && node instanceof TerminalNodeClass) {
-      listener.visitTerminal(node);
+    if (terminalnodeclass && node instanceof terminalnodeclass) {
+      listener.visitterminal(node);
       stack.pop();
-      processedCount++;
+      processedcount++;
       continue;
     }
 
     // otherwise, it's a rule node.
     if (!frame.visited) {
       // call the enter routines.
-      listener.enterEveryRule(node.ruleContext);
-      node.ruleContext.enterRule(listener);
+      listener.entereveryrule(node.rulecontext);
+      node.rulecontext.enterrule(listener);
       frame.visited = true;
-      processedCount++;
+      processedcount++;
       // continue processing the same node so we start iterating its children.
       continue;
     }
 
     // process children if any remain.
-    if (frame.childIndex < node.getChildCount()) {
-      const child = node.getChild(frame.childIndex);
-      frame.childIndex++;
+    if (frame.childindex < node.getchildcount()) {
+      const child = node.getchild(frame.childindex);
+      frame.childindex++;
       // push the child with a fresh frame.
-      stack.push({ node: child, childIndex: 0, visited: false });
+      stack.push({ node: child, childindex: 0, visited: false });
       continue;
     } else {
       // all children processed: exit the rule and pop the frame.
-      node.ruleContext.exitRule(listener);
-      listener.exitEveryRule(node.ruleContext);
+      node.rulecontext.exitrule(listener);
+      listener.exiteveryrule(node.rulecontext);
 
       stack.pop();
-      processedCount++;
+      processedcount++;
     }
 
   } // end of while loop
 
-}// end of asyncWalkTreeIteratively
+}// end of asyncwalktreeiteratively
 
-function countMeaningfulLines(fileString) {
-  const lines = fileString.split('\n');
-  const meaningfulLines = lines.filter(line => {
+function countmeaningfullines(filestring) {
+  const lines = filestring.split('\n');
+  const meaningfullines = lines.filter(line => {
     const trimmed = line.trim();
-    return trimmed !== '' && !trimmed.startsWith('%');
+    return trimmed !== '' && !trimmed.startswith('%');
   });
-  return meaningfulLines.length;
+  return meaningfullines.length;
 }
 
 
-let calculateBatchSize = function (number_proof_lines)
+let calculatebatchsize = function (number_proof_lines)
 {
-const minBatchSize = 20;
-  const maxBatchSize = 100;
+
+    // 230
+const minbatchsize = 20;
+  const maxbatchsize = 100;
 
   // small proofs -> smaller batch for responsiveness
   // sarge proofs -> larger batch for speed
-  const dynamicBatch = Math.round(Math.sqrt(number_proof_lines) * 2);
+  const dynamicbatch = math.round(math.sqrt((number_proof_lines) * 2));
+  console.log(`dynamic batch is : ${dynamicbatch}`)
 
-  return Math.max(minBatchSize, Math.min(maxBatchSize, dynamicBatch));
+  const batch_size = math.max(minbatchsize, math.min(maxbatchsize, dynamicbatch));
 
-  }// end of calculateBatchSize function
+  console.log(`calculated batchsize of ${batch_size}`)
+  return batch_size;
+
+  }// end of calculatebatchsize function
 
 
 
-let parseProof = function (proofText) {
-  let number_proof_lines = countMeaningfulLines(proofText);
+let parseproof = function (prooftext) {
+  let number_proof_lines = countmeaningfullines(prooftext);
   let divisor_to_ms = [-7];
 
 
   
-  const startTime = performance.now();
-	let chars = new antlr4.default.InputStream(proofText);
-	let lexer = new Lexer(chars);
-	let tokens = new antlr4.default.CommonTokenStream(lexer);
-	let parser = new Parser(tokens);
+  const starttime = performance.now();
+	let chars = new antlr4.default.inputstream(prooftext);
+	let lexer = new lexer(chars);
+	let tokens = new antlr4.default.commontokenstream(lexer);
+	let parser = new parser(tokens);
 
 
   console.log(`there are this many lines in this proof ${number_proof_lines}`);
   let divisor = 40;  // 
-//  let batchSize = Math.max(20, Math.min(100, Math.round(number_proof_lines / divisor)));
-    let batchSize = calculateBatchSize(number_proof_lines);
-	let formatter = new Formatter();
+//  let batchsize = math.max(20, math.min(100, math.round(number_proof_lines / divisor)));
+    let batchsize = calculatebatchsize(number_proof_lines);
+	let formatter = new formatter();
 
 	let tree;
-	console.log("Beginning parsing...");
+	console.log("beginning parsing...");
 
-  let usingIterative = true;
+  let usingiterative = true;
 
-  if (usingIterative === true){
+  if (usingiterative === true){
 
 	while ((tree = parser.tptp_input())) {
-		if (tree.getText() == "<EOF>") break;
-    asyncWalkTreeIteratively(formatter,tree,batchSize );
+		if (tree.gettext() == "<eof>") break;
+    asyncwalktreeiteratively(formatter,tree,batchsize );
 	}
 
-  } else if ( usingIterative === false){
-
-	while ((tree = parser.tptp_input())) {
-		if (tree.getText() == "<EOF>") break;
-		antlr4.default.tree.ParseTreeWalker.DEFAULT.walk(formatter, tree);
-	} }// end of elif
-
-	console.log("Finished parsing!")
+  }// end of if usingiterative 
+	console.log("finished parsing!")
 
 
 	let nm = formatter.node_map;
 
 	// post-processing of node-map.
-	for (let name of Object.keys(nm)) {
+	for (let name of object.keys(nm)) {
 		let node = nm[name];
 
 		node.graphviz = {
-			shape: getNodeShape(node),
-			color: getNodeColor(node),
+			shape: getnodeshape(node),
+			color: getnodecolor(node),
 			fillcolor: "#c0c0c0",
 		};
 
 		if (node.info['interesting'] !== undefined) {
-			node.graphviz.width = scaleFromInterestingness(node.info.interesting);
-			node.graphviz.height = scaleFromInterestingness(node.info.interesting);
+			node.graphviz.width = scalefrominterestingness(node.info.interesting);
+			node.graphviz.height = scalefrominterestingness(node.info.interesting);
 		}
 
 		if (node.children === undefined) {
 			node.children = [];
 		}
 
-		let parentsCopy = Array.from(node['parents']);
-		for (let parentName of parentsCopy) {
-			if (parentName in nm) {
-				if (nm[parentName]["children"] === undefined) {
-					nm[parentName]["children"] = [name]
+		let parentscopy = array.from(node['parents']);
+		for (let parentname of parentscopy) {
+			if (parentname in nm) {
+				if (nm[parentname]["children"] === undefined) {
+					nm[parentname]["children"] = [name]
 				}
 				else {
-					nm[parentName]["children"].push(name);
+					nm[parentname]["children"].push(name);
 				}
 			}
 			else {
-				console.log(`Error: ${parentName} was a parentNode of ${node["name"]}, but is not in the map!`);
+				console.log(`error: ${parentname} was a parentnode of ${node["name"]}, but is not in the map!`);
 				// remove the parent.
-				while(node['parents'].includes(parentName)){
-					console.log(`Removing ${parentName} from ${node.name}'s parents`);
-					let location = node['parents'].indexOf(parentName);
+				while(node['parents'].includes(parentname)){
+					console.log(`removing ${parentname} from ${node.name}'s parents`);
+					let location = node['parents'].indexof(parentname);
 					node['parents'].splice(location, 1);
 				}
 			}
 		}
 	}
-  const endTime = performance.now()
+  const endtime = performance.now()
   
-  if (usingIterative == true){
-  console.log(`finished parsing using iterative walk in ${endTime - startTime} ms with batchSize: ${batchSize} `)
-    divisor_to_ms[divisor] = (endTime - startTime)}
+  if (usingiterative == true){
+  console.log(`finished parsing using iterative walk in ${endtime - starttime} ms with batchsize: ${batchsize} `)
+  }
     else{
-  console.log(`finished parsing using recursive walk in ${endTime - startTime} ms with batchsize:  ${batchSize}  `)
-    divisor_to_ms[divisor] = (endTime - startTime)
+  console.log(`finished parsing using recursive walk in ${endtime - starttime} ms with batchsize:  ${batchsize}  `)
     }
   console.log("finished ");
 
@@ -564,4 +563,4 @@ let parseProof = function (proofText) {
 }
 
 
-export { parseProof, proofToGV };
+export { parseproof, prooftogv };
