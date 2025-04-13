@@ -1,4 +1,6 @@
-import {TerminalNode, ErrorNode,} from 'antlr4'
+
+
+
 import * as antlr4 from 'antlr4';
 window.antlr4 = antlr4;
 
@@ -9,17 +11,6 @@ import {default as Listener} from './TPTPListener';
 function stripParens(formula){
 	return formula.replace(/\s+/g,'').replace(/[()]/g, '');
 }
-// treewalk
-
-
-
-
-//treewalk
-
-
-
-
-
 
 function interpretationLabel(node){
     let s = node.formula.replace(/"/g, '\\"');
@@ -74,73 +65,80 @@ function scaleFromInterestingness(interestingness) {
 window.scaleFromInterestingness = scaleFromInterestingness;
 
 // helper function for extracting recursive parent information:
+function getParentsFromSource(source, node){
 
-function getParentsFromSource(source, node) {
-  console.log("new method")
-	let stack = [{ source, node }];
-
-	while (stack.length > 0) {
-		let { source, node } = stack.pop();
-
-		let dag = source.dag_source();
-		let sources = source.sources();
-
-		if (sources !== null) {
-			for (let s of sources) {
-				stack.push({ source: s, node });
-			}
-			continue;
-		} else if (dag === null) {
-			continue;
-		}
-
-		if (dag.inference_record()) {
-			let inference_record = dag.inference_record();
-			node.inference_record = inference_record.getText();
-
-			let parent_list = [inference_record.parents().parent_list().parent_info()];
-			parent_list = parent_list.concat(
-				inference_record.parents().parent_list().comma_parent_info()
-					.map(comma_info => comma_info.parent_info())
-			);
-
-			for (let p of parent_list) {
-				let ps = p.source();
-
-				if (ps.dag_source()) {
-					if (ps.dag_source().name()) {
-						node.parents.push(ps.getText());
-					} else {
-						try {
-							let parents = ps.dag_source().inference_record().parents().parent_list().parent_info();
-							parents = [parents, ...ps.dag_source().inference_record().parents().parent_list()
-								.comma_parent_info().map(x => x.parent_info())];
-							let new_sources = parents.map(x => x.source());
-
-							for (let s of new_sources) {
-								stack.push({ source: s, node });
-							}
-						} catch (e) {
-							console.log(`failed to parse dag source: ${ps.dag_source().getText()}`);
-							console.log(e);
-						}
-					}
-				} else if (ps.sources()) {
-					let new_sources = ps.sources().source();
-					for (let s of new_sources) {
-						stack.push({ source: s, node });
-					}
-				} else {
-					console.log(`${node.name} has source ${source}`);
-				}
-			}
-		} else if (dag.name()) {
-			node.parents.push(dag.name().getText());
+	let dag = source.dag_source();
+	let sources = source.sources();
+	if (sources !== null){
+		for(let s of sources){
+			getParentsFromSource(s, node);
 		}
 	}
+	else if (dag === null){
+		return
+	}
+
+	if (dag.inference_record()) {
+		// console.log("got inference record");
+		let inference_record = dag.inference_record();
+		node.inference_record = inference_record.getText();
+
+		//@=========================================================================================
+		//~ ORIGINAL FROM JACK
+		// let parent_list = inference_record.parents().parent_list().parent_info();
+
+		//~ MODIFIED TO USE COMMA_PARENT_INFO
+		let parent_list = [inference_record.parents().parent_list().parent_info()];
+		window.parent_list = parent_list;
+		window.inference_record = inference_record;
+
+		parent_list = parent_list.concat(
+			inference_record.parents().parent_list().comma_parent_info()
+				.map(comma_info => comma_info.parent_info())
+		);
+		//@=========================================================================================
+		
+		// console.log("parent_list", parent_list);
+		for (let i = 0; i < parent_list.length; i++) {
+			let p = parent_list[i];
+			let ps = p.source();
+
+			if (ps.dag_source()){
+				if (ps.dag_source().name()){
+					node.parents.push(ps.getText());
+				}
+				else{
+					try{
+						let sources = [];
+						window.ps = ps;
+						let parents = ps.dag_source().inference_record().parents().parent_list().parent_info();
+						parents = [parents, ...ps.dag_source().inference_record().parents().parent_list().comma_parent_info().map(x => x.parent_info())];
+						sources = parents.map(x => x.source());
+						
+						for(let s of sources){
+							getParentsFromSource(s, node);
+						}
+					}catch(e){
+						console.log(`failed to parse dag source: ${ps.dag_source().getText()}`);
+						console.log(e);
+					}
+				}
+			}
+			else if(ps.sources()){
+				let sources = ps.sources().source();
+				for(let s of sources){
+					getParentsFromSource(s, node);
+				}
+			}
+			else{
+				console.log(`${node.name} has source ${source}`);
+			}
+		}
+
+	} else if (dag.name()) {
+		node.parents.push(dag.name().getText());
+	}
 }
-
-
 
 window.getParentsFromSource = getParentsFromSource;
 
@@ -192,7 +190,7 @@ class Formatter extends Listener {
 	process(ctx, type) {
 		let role = ctx.formula_role().getText();
 		
-		if(!["conjecture","type" ,"negated_conjecture", "axiom", "plain"].includes(role)){
+		if(!["conjecture", "negated_conjecture", "axiom", "plain"].includes(role)){
 			console.log(`"${role}" role not shown for "${ctx.name().getText()}"`);
 			return;
 		}
@@ -225,7 +223,7 @@ class Formatter extends Listener {
 			}
 			node.info = infoObj;
 		} catch (e) {
-			console.log(`"${node.name}" has no useful info (or we failed getting it)`)
+//			console.log(`"${node.name}" has no useful info (or we failed getting it)`)
 			// console.log(e)
 		}
 
@@ -236,15 +234,15 @@ class Formatter extends Listener {
 			getParentsFromSource(source, node);
 		}
 		catch (e) {
-			console.log(`"${node.name}" has no sources (or we failed getting them).`)
+//			console.log(`"${node.name}" has no sources (or we failed getting them).`)
 		}
 
         try {
             getNodeLevel(source, node);
         }
         catch (e) {
-            console.log(`"${node.name}" has no level (or we failed getting it).`);
-			console.log(e);
+ //           console.log(`"${node.name}" has no level (or we failed getting it).`);
+	//		console.log(e);
         }
 
 		this.node_map[node.name] = node;
@@ -384,81 +382,130 @@ let proofToGV = function (nodes) {
 	return gvLines.join('\n');
 }
 
+async function asyncWalkTreeIteratively(listener, root, batchSize = 50) {
+  const TerminalNodeClass = (typeof TerminalNode !== "undefined" && TerminalNode) || null;
+
+  // stack frames include: { node, childIndex, visited }
+  // 'visited' indicates whether we've called enterRule on this node.
+  const stack = [];
+  stack.push({ node: root, childIndex: 0, visited: false });
+  let processedCount = 0;  
+
+  while (stack.length > 0) {
+    if (processedCount >= batchSize) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      processedCount = 0;
+    }
+
+    // peek at the top stack frame
+    const frame = stack[stack.length - 1];
+    const node = frame.node;
+
+
+    // check for terminal node:
+    if (TerminalNodeClass && node instanceof TerminalNodeClass) {
+      listener.visitTerminal(node);
+      stack.pop();
+      processedCount++;
+      continue;
+    }
+
+    // otherwise, it's a rule node.
+    if (!frame.visited) {
+      // call the enter routines.
+      listener.enterEveryRule(node.ruleContext);
+      node.ruleContext.enterRule(listener);
+      frame.visited = true;
+      processedCount++;
+      // continue processing the same node so we start iterating its children.
+      continue;
+    }
+
+    // process children if any remain.
+    if (frame.childIndex < node.getChildCount()) {
+      const child = node.getChild(frame.childIndex);
+      frame.childIndex++;
+      // push the child with a fresh frame.
+      stack.push({ node: child, childIndex: 0, visited: false });
+      continue;
+    } else {
+      // all children processed: exit the rule and pop the frame.
+      node.ruleContext.exitRule(listener);
+      listener.exitEveryRule(node.ruleContext);
+
+      stack.pop();
+      processedCount++;
+    }
+
+  } // end of while loop
+
+}// end of asyncWalkTreeIteratively
+
+function countMeaningfulLines(fileString) {
+  const lines = fileString.split('\n');
+  const meaningfulLines = lines.filter(line => {
+    const trimmed = line.trim();
+    return trimmed !== '' && !trimmed.startsWith('%');
+  });
+  return meaningfulLines.length;
+}
+
+
+let calculateBatchSize = function (number_proof_lines)
+{
+const minBatchSize = 20;
+  const maxBatchSize = 100;
+
+  // small proofs -> smaller batch for responsiveness
+  // sarge proofs -> larger batch for speed
+  const dynamicBatch = Math.round(Math.sqrt(number_proof_lines) * 2);
+
+  return Math.max(minBatchSize, Math.min(maxBatchSize, dynamicBatch));
+
+  }// end of calculateBatchSize function
+
+
 
 let parseProof = function (proofText) {
+  let number_proof_lines = countMeaningfulLines(proofText);
+  let divisor_to_ms = [-7];
+
+
+  
+  const startTime = performance.now();
 	let chars = new antlr4.default.InputStream(proofText);
 	let lexer = new Lexer(chars);
 	let tokens = new antlr4.default.CommonTokenStream(lexer);
 	let parser = new Parser(tokens);
-	// parser.removeErrorListeners();
-	parser.buildParseTrees = true;
 
+
+  console.log(`there are this many lines in this proof ${number_proof_lines}`);
+  let divisor = 40;  // 
+//  let batchSize = Math.max(20, Math.min(100, Math.round(number_proof_lines / divisor)));
+    let batchSize = calculateBatchSize(number_proof_lines);
 	let formatter = new Formatter();
-
-
-	//iterative implementation
-	function iterativeWalk(listener, root) {
-		console.log("inside of iterative walk")
-		const stack = [];
-		stack.push({ node: root, stage: "enter" });
-	
-		while (stack.length > 0) {
-			const { node, stage } = stack.pop();
-	
-	const isErrorNode = typeof node.isErrorNode === 'function' && node.isErrorNode();
-	
-			if (isErrorNode) {
-				if (stage === "enter" && listener.visitErrorNode) {
-					listener.visitErrorNode(node);
-				}
-				continue;
-			}
-	
-			if (node instanceof TerminalNode) {
-				if (stage === "enter" && listener.visitTerminal) {
-					listener.visitTerminal(node);
-				}
-				continue;
-			}
-	
-			if (stage === "exit") {
-				if (listener[`exit${node.constructor.name}`]) {
-					listener[`exit${node.constructor.name}`](node);
-				}
-				if (listener.exitEveryRule) {
-					listener.exitEveryRule(node);
-				}
-				continue;
-			}
-	
-			if (listener.enterEveryRule) {
-				listener.enterEveryRule(node);
-			}
-			if (listener[`enter${node.constructor.name}`]) {
-				listener[`enter${node.constructor.name}`](node);
-			}
-	
-			stack.push({ node, stage: "exit" });
-			for (let i = node.getChildCount() - 1; i >= 0; i--) {
-				stack.push({ node: node.getChild(i), stage: "enter" });
-			}
-		}
-	}
 
 	let tree;
 	console.log("Beginning parsing...");
 
+  let usingIterative = true;
+
+  if (usingIterative === true){
+
 	while ((tree = parser.tptp_input())) {
 		if (tree.getText() == "<EOF>") break;
-		 antlr4.default.tree.ParseTreeWalker.DEFAULT.walk(formatter, tree);
-    //  ^ this is a recursive tree walk function that is slowing down performance on large proofs
-    
-    
-    iterativeWalk(formatter,tree);       
+    asyncWalkTreeIteratively(formatter,tree,batchSize );
+	}
 
+  } else if ( usingIterative === false){
 
-	}// end of while
+	while ((tree = parser.tptp_input())) {
+		if (tree.getText() == "<EOF>") break;
+		antlr4.default.tree.ParseTreeWalker.DEFAULT.walk(formatter, tree);
+	} }// end of elif
+
 	console.log("Finished parsing!")
+
 
 	let nm = formatter.node_map;
 
@@ -502,6 +549,16 @@ let parseProof = function (proofText) {
 			}
 		}
 	}
+  const endTime = performance.now()
+  
+  if (usingIterative == true){
+  console.log(`finished parsing using iterative walk in ${endTime - startTime} ms with batchSize: ${batchSize} `)
+    divisor_to_ms[divisor] = (endTime - startTime)}
+    else{
+  console.log(`finished parsing using recursive walk in ${endTime - startTime} ms with batchsize:  ${batchSize}  `)
+    divisor_to_ms[divisor] = (endTime - startTime)
+    }
+  console.log("finished ");
 
 	return nm;
 }
