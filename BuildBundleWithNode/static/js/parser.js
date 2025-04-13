@@ -472,7 +472,7 @@ const minbatchsize = 20;
 
 
 
-let parseproof = function (prooftext) {
+let parseProof = function (prooftext) {
   let number_proof_lines = countmeaningfullines(prooftext);
   let divisor_to_ms = [-7];
 
@@ -563,4 +563,4 @@ let parseproof = function (prooftext) {
 }
 
 
-export { parseproof, prooftogv };
+export { parseProof, proofToGV };
