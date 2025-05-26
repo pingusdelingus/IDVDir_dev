@@ -6,6 +6,10 @@ import {default as Lexer} from './TPTPLexer';
 import {default as Parser} from './TPTPParser';
 import {default as Listener} from './TPTPListener';
 
+const TerminalNode = antlr4.TerminalNode;
+const ParserRuleContext = antlr4.ParserRuleContext;
+
+
 function stripParens(formula){
 	return formula.replace(/\s+/g,'').replace(/[()]/g, '');
 }
@@ -64,7 +68,9 @@ window.scaleFromInterestingness = scaleFromInterestingness;
 
 // helper function for extracting recursive parent information:
 function getParentsFromSource(source, node){
-
+  // return faster if null source
+  if (source == null) return;
+    
 	let dag = source.dag_source();
 	let sources = source.sources();
 	if (sources !== null){
@@ -140,17 +146,19 @@ function getParentsFromSource(source, node){
 
 window.getParentsFromSource = getParentsFromSource;
 
+
+const Lvlregex = /level\(([0-9]+)\)/;
 function getNodeLevel(source, node){
     // console.log("Getting node level", node, source);
-    let regex = /level\(([0-9]+)\)/;
     try{
-        node.level = parseInt(node.inference_record.match(regex)[1]);
+        node.level = parseInt(node.inference_record.match(Lvlregex)[1]);
     }
     catch(e){
         window.source = source;
+        if (source.internal_source() != null){
         node.level = parseInt(
-            source.internal_source().getText().match(regex)[1]
-        );
+            source.internal_source().getText().match(Lvlregex)[1]
+        ); }
     }
     // console.log("Got node level", node.level);
 }
@@ -244,9 +252,9 @@ class Formatter extends Listener {
         }
 
 		this.node_map[node.name] = node;
-	}
+	}// end of process function
 
-}
+}// end of Formatter class
 
 
 function abbreviate(label){
@@ -383,60 +391,55 @@ let proofToGV = function (nodes) {
 
 // iterative implementation for antlr4 tree walk
 async function asyncWalkTreeIteratively(listener, root, batchSize = 50) {
-  const TerminalNodeClass = (typeof TerminalNode !== "undefined" && TerminalNode) || null;
+    const stack = [];
+    stack.push({ node: root, childIndex: 0, visited: false });
+    let operationsCount = 0; // renamed to better reflect its purpose
 
-  // stack frames include: { node, childIndex, visited }
-  // 'visited' indicates whether we've called enterRule on this node.
-  const stack = [];
-  stack.push({ node: root, childIndex: 0, visited: false });
-  let processedCount = 0;  
+    while (stack.length > 0) {
+        if (operationsCount >= batchSize) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+            operationsCount = 0;
+        }
 
-  while (stack.length > 0) {
-    if (processedCount >= batchSize) {
+        const frame = stack[stack.length - 1];
+        const node = frame.node;
 
-      await new Promise(resolve => setTimeout(resolve, 0));
-      processedCount = 0;
+        if (node instanceof TerminalNode) {
+            listener.visitTerminal(node);
+            stack.pop();
+            // operationsCount++;  commented out: terminal nodes often very numerous, not directly processed by formatter
+            continue;
+        }
+
+        if (!(node instanceof ParserRuleContext)) {
+             console.error("Unexpected node type in parse tree:", node);
+             stack.pop();
+             // operationsCount++;
+             continue;
+        }
+
+        if (!frame.visited) {
+            listener.enterEveryRule(node);
+            node.enterRule(listener); // This is where enterThf_annotated, etc., are called
+            frame.visited = true;
+
+            // --- OPTIMIZATION: Only count nodes that `Formatter` actually processes ---
+            // since the Formatter does all the heavy lifting here
+            operationsCount++; 
+
+        }
+
+        if (frame.childIndex < node.getChildCount()) {
+            const child = node.getChild(frame.childIndex);
+            frame.childIndex++;
+            stack.push({ node: child, childIndex: 0, visited: false });
+            continue;
+        } else {
+            node.exitRule(listener);
+            listener.exitEveryRule(node);
+            stack.pop();
+        }
     }
-
-    // peek at the top stack frame
-    const frame = stack[stack.length - 1];
-    const node = frame.node;
-
-
-    // check for terminal node:
-    if (TerminalNodeClass && node instanceof TerminalNodeClass) {
-      listener.visitTerminal(node);
-      stack.pop();
-      processedCount++;
-      continue;
-    }
-
-    // otherwise, it's a rule node.
-    if (!frame.visited) {
-      // call the enter routines.
-      listener.enterEveryRule(node.ruleContext);
-      node.ruleContext.enterRule(listener);
-      frame.visited = true;
-      processedCount++;
-      // continue processing the same node so we start iterating its children.
-      continue;
-    }
-
-    // process children if any remain.
-    if (frame.childIndex < node.getChildCount()) {
-      const child = node.getChild(frame.childIndex);
-      frame.childIndex++;
-      // push the child with a fresh frame.
-      stack.push({ node: child, childIndex: 0, visited: false });
-      continue;
-    } else {
-      // all children processed: exit the rule and pop the frame.
-      node.ruleContext.exitRule(listener);
-      listener.exitEveryRule(node.ruleContext);
-      stack.pop();
-      processedCount++;
-    }
-  }
 }// end of asyncWalkTreeIteratively method
 
 function countmeaningfullines(filestring) {
@@ -447,7 +450,6 @@ function countmeaningfullines(filestring) {
 
   });
   return meaningfullines.length;
-  console.log('yo what the-  ')
 }
 
 
@@ -456,13 +458,13 @@ function countmeaningfullines(filestring) {
 let calculateBatchSize = function (number_proof_lines)
 {
     // 230
-const minbatchsize = 20;
+const minbatchsize = 15;
   const maxbatchsize = 100;
 
   // small proofs -> smaller batch for responsiveness
-  // sarge proofs -> larger batch for speed
+  // large proofs -> larger batch for speed
   const dynamicbatch = Math.round(Math.sqrt((number_proof_lines) * 2));
-  console.log(`dynamic batch is : ${dynamicbatch}`)
+//  console.log(`dynamic batch is : ${dynamicbatch}`)
 
   const batch_size = Math.max(minbatchsize, Math.min(maxbatchsize, dynamicbatch));
 
@@ -476,6 +478,7 @@ let parseProof = function (proofText) {
   let startTimeParseProof = performance.now(); 
 
   let number_proof_lines = countmeaningfullines(proofText);
+  console.log(`We found ${number_proof_lines} lines of proof to parse`)
 
 	let chars = new antlr4.default.InputStream(proofText);
 	let lexer = new Lexer(chars);
@@ -489,14 +492,17 @@ let parseProof = function (proofText) {
 
 	let tree;
 	console.log("Beginning parsing...");
-	while ((tree = parser.tptp_input())) {
-		if (tree.getText() == "<EOF>") break; 
-		asyncWalkTreeIteratively(formatter, tree, batchSize);
-	}
+//  let count = 1;
+
+      while ((tree = parser.tptp_input())) {
+        if (tree.getText() == "<EOF>") break; 
+ //       console.log(`while loop for async walk has ran ${count++} times.`)
+        asyncWalkTreeIteratively(formatter, tree, batchSize);
+      }
+
+
   let endTimeParseProof = performance.now();
   let parseProofTime = endTimeParseProof - startTimeParseProof;
-
-	console.log(`Finished parsing in ${parseProofTime}`)
 
 	let nm = formatter.node_map;
   
@@ -542,13 +548,14 @@ let parseProof = function (proofText) {
 			}
 		}
 	}
+
+
   let endTimeGraphViz = performance.now();
-
   let graphVizTime = endTimeGraphViz - startgraphVizTime;
-  console.log(`finished graph viz in : ${graphVizTime}`);
-
-	console.log(`Finished our parsing in ${parseProofTime}`)
   
+
+  console.log(`finished graph viz in : ${graphVizTime}`);
+	console.log(`Finished our parsing in ${parseProofTime}`);
 	return nm;
 }
 
